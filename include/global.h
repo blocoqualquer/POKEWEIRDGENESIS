@@ -324,6 +324,18 @@ struct BattleTowerData // Leftover from R/S
     /*0x04D1, 0x0581*/ u8 filler_4D1[0x317];
 }; /* size = 0x7E8 */
 
+// POKEWEIRDGENESIS: in-game calendar/clock, see world_clock.h. 8 bytes.
+struct WorldClock
+{
+    u16 year;      // starts at 1
+    u8 month;      // 0-11
+    u8 day;        // 1-28
+    u8 hour;       // 0-23
+    u8 minute;     // 0-59
+    u8 weekday;    // 0-6 (0 = Sunday)
+    u8 frames;     // 0-59, sub-minute frame counter
+};
+
 struct SaveBlock2
 {
     /*0x000*/ u8 playerName[PLAYER_NAME_LENGTH + 1];
@@ -354,7 +366,8 @@ struct SaveBlock2
     /*0xAF0*/ struct BerryCrush berryCrush;
     /*0xB00*/ struct PokemonJumpRecords pokeJump;
     /*0xB10*/ struct BerryPickingResults berryPick;
-    /*0xB20*/ u8 filler_B20[0x400];
+    /*0xB20*/ struct WorldClock worldClock; // carved out of the former filler_B20[0x400]
+    /*0xB28*/ u8 filler_B28[0x3F8];
     /*0xF20*/ u32 encryptionKey;
 }; // size: 0xF24
 

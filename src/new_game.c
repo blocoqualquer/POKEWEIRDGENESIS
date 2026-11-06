@@ -12,6 +12,7 @@
 #include "event_data.h"
 #include "mail_data.h"
 #include "play_time.h"
+#include "world_clock.h"
 #include "money.h"
 #include "battle_records.h"
 #include "pokemon_size_record.h"
@@ -122,6 +123,7 @@ void NewGameInitData(void)
     gSaveBlock2Ptr->unkFlag2 = FALSE;
     InitPlayerTrainerId();
     PlayTimeCounter_Reset();
+    WorldClock_Reset();
     ClearPokedexFlags();
     InitEventData();
     ResetFameChecker();

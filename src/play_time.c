@@ -1,4 +1,5 @@
 #include "play_time.h"
+#include "world_clock.h"
 
 static u8 sPlayTimeCounterState;
 
@@ -34,6 +35,7 @@ void PlayTimeCounter_Update(void)
 {
     if (sPlayTimeCounterState == RUNNING)
     {
+        WorldClock_Tick();
         gSaveBlock2Ptr->playTimeVBlanks++;
         if (gSaveBlock2Ptr->playTimeVBlanks > 59)
         {
