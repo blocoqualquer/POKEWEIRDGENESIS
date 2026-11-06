@@ -12,6 +12,7 @@
 #include "event_data.h"
 #include "fieldmap.h"
 #include "safari_zone.h"
+#include "clock_window.h"
 #include "start_menu.h"
 #include "menu.h"
 #include "load_save.h"
@@ -128,7 +129,7 @@ static const struct MenuAction sStartMenuActionTable[] = {
 static const struct WindowTemplate sSafariZoneStatsWindowTemplate = {
     .bg = 0,
     .tilemapLeft = 1,
-    .tilemapTop = 1,
+    .tilemapTop = 9, // below the clock window (rows 1-6)
     .width = 10,
     .height = 4,
     .paletteNum = 15,
@@ -267,6 +268,8 @@ static void DrawSafariZoneStatsWindow(void)
 
 static void DestroySafariZoneStatsWindow(void)
 {
+    // Also tears down the clock window: every exit path of the start menu calls this.
+    ClockWindow_Destroy();
     if (GetSafariZoneFlag())
     {
         ClearStdWindowAndFrameToTransparent(sSafariZoneStatsWindowId, FALSE);
@@ -317,6 +320,7 @@ static s8 DoDrawStartMenu(void)
         sDrawStartMenuState[0]++;
         break;
     case 3:
+        ClockWindow_Draw();
         if (GetSafariZoneFlag())
             DrawSafariZoneStatsWindow();
         sDrawStartMenuState[0]++;
@@ -407,6 +411,7 @@ void ShowStartMenu(void)
 
 static bool8 StartCB_HandleInput(void)
 {
+    ClockWindow_Update();
     if (JOY_NEW(DPAD_UP))
     {
         PlaySE(SE_SELECT);
@@ -711,6 +716,7 @@ static u8 SaveDialogCB_PrintAskSaveText(void)
     ClearStdWindowAndFrame(GetStartMenuWindowId(), FALSE);
     RemoveStartMenuWindow();
     DestroyHelpMessageWindow(0);
+    ClockWindow_Destroy(); // save stats window uses the same corner and VRAM tiles
     PrintSaveStats();
     PrintSaveTextWithFollowupFunc(gText_WouldYouLikeToSaveTheGame, SaveDialogCB_AskSavePrintYesNoMenu);
     return SAVECB_RETURN_CONTINUE;

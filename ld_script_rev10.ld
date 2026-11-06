@@ -97,6 +97,7 @@ SECTIONS {
         src/trade_scene.o(.text);
         src/play_time.o(.text);
         src/world_clock.o(.text);
+        src/clock_window.o(.text);
         src/new_game.o(.text);
         src/overworld.o(.text);
         src/fieldmap.o(.text);
@@ -442,6 +443,8 @@ SECTIONS {
         src/coord_event_weather.o(.rodata);
         src/field_tasks.o(.rodata);
         src/start_menu.o(.rodata);
+        src/world_clock.o(.rodata);
+        src/clock_window.o(.rodata);
         src/tileset_anims.o(.rodata);
         src/palette.o(.rodata);
         src/sound.o(.rodata);
