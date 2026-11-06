@@ -47,6 +47,11 @@ jobs:
           sudo apt update
           sudo apt install -y gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev xdelta3
 
+      - name: Test world generator (PC build of the same src/worldgen.c)
+        run: |
+          gcc -O2 -Wall -Wextra -std=gnu99 -iquote include -o worldgen_tool devtools/worldgen/worldgen_tool.c src/worldgen.c
+          ./worldgen_tool test 20000
+
       - name: Build and install agbcc
         working-directory: ./agbcc
         run: |
