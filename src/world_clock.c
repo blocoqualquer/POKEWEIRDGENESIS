@@ -1,5 +1,6 @@
 #include "global.h"
 #include "world_clock.h"
+#include "start_menu.h"
 
 // Month -> season. Edit this table to change the calendar's seasons.
 // Default: northern-style (January is deep winter).
@@ -56,6 +57,9 @@ void WorldClock_Tick(void)
     if (!WorldClock_IsValid(clock))
         WorldClock_Reset();
 
+    if (WorldClock_IsPaused())
+        return;
+
     if (++clock->frames < WORLD_CLOCK_FRAMES_PER_MINUTE)
         return;
     clock->frames = 0;
@@ -82,6 +86,13 @@ void WorldClock_Tick(void)
 
     if (clock->year < 0xFFFF)
         clock->year++;
+}
+
+// Time stands still while the player is in the start menu (a moment of peace).
+// Anything else that must stop with the clock (hunger, ...) should check this too.
+bool8 WorldClock_IsPaused(void)
+{
+    return StartMenu_IsClockPaused();
 }
 
 u16 WorldClock_GetYear(void)    { return gSaveBlock2Ptr->worldClock.year; }

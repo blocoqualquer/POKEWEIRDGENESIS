@@ -67,6 +67,7 @@ enum WorldClockSeason
 
 void WorldClock_Reset(void);
 void WorldClock_Tick(void);
+bool8 WorldClock_IsPaused(void);
 
 u16 WorldClock_GetYear(void);
 u8 WorldClock_GetMonth(void);
