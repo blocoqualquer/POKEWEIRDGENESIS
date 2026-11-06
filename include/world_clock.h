@@ -2,6 +2,7 @@
 #define GUARD_WORLD_CLOCK_H
 
 #include "global.h"
+#include "constants/world_clock.h"
 
 // ---------------------------------------------------------------------------
 // POKEWEIRDGENESIS world clock
@@ -76,6 +77,8 @@ u8 WorldClock_GetHour(void);
 u8 WorldClock_GetMinute(void);
 u8 WorldClock_GetWeekday(void);
 u8 WorldClock_GetSeason(void);
+u8 WorldClock_GetPhase(void);   // WORLD_CLOCK_PHASE_*
 bool8 WorldClock_IsNight(void);
+u16 GetWorldClockPhase(void); // script special, returns WORLD_CLOCK_PHASE_*
 
 #endif // GUARD_WORLD_CLOCK_H

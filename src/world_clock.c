@@ -20,9 +20,6 @@ static const u8 sSeasonByMonth[WORLD_CLOCK_MONTHS_PER_YEAR] =
     [MONTH_DECEMBER]  = SEASON_WINTER,
 };
 
-#define NIGHT_START_HOUR 20  // 20:00
-#define NIGHT_END_HOUR    6  // 06:00
-
 // Brand new games and saves made before the clock existed (zeroed memory)
 // both end up at the starting date.
 static bool8 WorldClock_IsValid(const struct WorldClock *clock)
@@ -107,9 +104,26 @@ u8 WorldClock_GetSeason(void)
     return sSeasonByMonth[gSaveBlock2Ptr->worldClock.month % WORLD_CLOCK_MONTHS_PER_YEAR];
 }
 
-bool8 WorldClock_IsNight(void)
+u8 WorldClock_GetPhase(void)
 {
     u8 hour = gSaveBlock2Ptr->worldClock.hour;
 
-    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+    // Night wraps around midnight, so it is the fallthrough case.
+    if (hour >= WORLD_CLOCK_MORNING_START_HOUR && hour < WORLD_CLOCK_DAY_START_HOUR)
+        return WORLD_CLOCK_PHASE_MORNING;
+    if (hour >= WORLD_CLOCK_DAY_START_HOUR && hour < WORLD_CLOCK_AFTERNOON_START_HOUR)
+        return WORLD_CLOCK_PHASE_DAY;
+    if (hour >= WORLD_CLOCK_AFTERNOON_START_HOUR && hour < WORLD_CLOCK_NIGHT_START_HOUR)
+        return WORLD_CLOCK_PHASE_AFTERNOON;
+    return WORLD_CLOCK_PHASE_NIGHT;
+}
+
+bool8 WorldClock_IsNight(void)
+{
+    return WorldClock_GetPhase() == WORLD_CLOCK_PHASE_NIGHT;
+}
+
+u16 GetWorldClockPhase(void)
+{
+    return WorldClock_GetPhase();
 }
