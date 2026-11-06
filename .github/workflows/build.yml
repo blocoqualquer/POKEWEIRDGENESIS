@@ -1,43 +1,107 @@
 name: CI
 
-# POKEWEIRDGENESIS is a hack, so the output never matches the original ROM:
-# the build runs without the SHA1 comparison, and only for FireRed (rev 0).
+# POKEWEIRDGENESIS is a hack, so the output never matches the original ROM.
+# The workflow builds two ROMs on the runner:
+#   1. the pristine pret/pokefirered base commit (must match the original FireRed SHA1)
+#   2. this hack
+# and publishes ONLY the binary diff between them (an xdelta patch).
+# No ROM is ever uploaded: players apply the patch to their own FireRed ROM.
 on:
   push:
     branches: [ main ]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Commit "Import pret/pokefirered base": the untouched upstream decomp.
+  BASE_COMMIT: 28a4adf2981abe171da7c11a216f7f2ad53a80f8
+  GAME_VERSION: FIRERED
+  GAME_LANGUAGE: ENGLISH
+  GAME_REVISION: 0
+  MODERN: 0
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GAME_VERSION: FIRERED
-      GAME_LANGUAGE: ENGLISH
-      GAME_REVISION: 0
-      MODERN: 0
-      COMPARE: 0
     steps:
-      - name: Checkout
+      - name: Checkout hack
         uses: actions/checkout@v4
+
+      - name: Checkout pristine base
+        uses: actions/checkout@v4
+        with:
+          path: base
+          ref: ${{ env.BASE_COMMIT }}
 
       - name: Checkout agbcc
         uses: actions/checkout@v4
         with:
-          path: 'agbcc'
-          repository: 'pret/agbcc'
+          path: agbcc
+          repository: pret/agbcc
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev
-        # build-essential and git are already installed
+          sudo apt install -y gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev xdelta3
 
-      - name: Install agbcc
+      - name: Build and install agbcc
+        working-directory: ./agbcc
         run: |
           ./build.sh
           ./install.sh ../
-        working-directory: ./agbcc
+          ./install.sh ../base
 
-      - name: Build FireRed
+      - name: Build pristine base (must match the original ROM)
+        working-directory: ./base
+        env:
+          COMPARE: 1
+        run: make -j$(nproc) all
+
+      - name: Build hack
+        env:
+          COMPARE: 0
+        run: make -j$(nproc) all
+
+      - name: Create patch
         run: |
-          make -j$(nproc) all
+          xdelta3 -e -9 -f -s base/pokefirered.gba pokefirered.gba POKEWEIRDGENESIS.xdelta
+          # sanity check: applying the patch to the base must give back the hack ROM
+          xdelta3 -d -f -s base/pokefirered.gba POKEWEIRDGENESIS.xdelta check.gba
+          cmp check.gba pokefirered.gba
+          rm check.gba
+          ls -l POKEWEIRDGENESIS.xdelta
+
+      - name: Upload patch (pull requests / manual runs)
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: POKEWEIRDGENESIS-patch
+          path: POKEWEIRDGENESIS.xdelta
+
+      - name: Publish release (main)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          BASE_SHA1=$(cut -d' ' -f1 base/firered.sha1)
+          cat > notes.md <<NOTES
+          Build automática do commit \`$SHORT\`.
+
+          **Como jogar (no celular):**
+          1. Tenha a sua ROM original de Pokémon FireRed (EUA, versão 1.0), SHA1 \`$BASE_SHA1\`.
+          2. Baixe \`POKEWEIRDGENESIS.xdelta\` abaixo.
+          3. Aplique o patch na sua ROM com um aplicativo de patch (por exemplo UniPatcher no Android, ou o Rom Patcher JS no navegador).
+          4. Abra a ROM resultante no emulador.
+
+          Este arquivo é só um patch: não contém o jogo original.
+          NOTES
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest POKEWEIRDGENESIS.xdelta \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Build mais recente ($SHORT)" \
+            --notes-file notes.md
