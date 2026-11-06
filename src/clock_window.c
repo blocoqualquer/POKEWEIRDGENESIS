@@ -104,6 +104,13 @@ void ClockWindow_Update(void)
     if (!sClockWindowActive)
         return;
 
+#if WORLD_CLOCK_DEBUG_KEYS
+    if (JOY_NEW(L_BUTTON))
+        WorldClock_DebugAdvanceMinutes(60);
+    if (JOY_NEW(R_BUTTON))
+        WorldClock_DebugAdvanceMinutes(15);
+#endif
+
     // Compare hour too, so a full 24h wrap on the same minute still refreshes.
     if (sClockShownMinute != WorldClock_GetMinute() || sClockShownHour != WorldClock_GetHour())
         PrintClockWindow();

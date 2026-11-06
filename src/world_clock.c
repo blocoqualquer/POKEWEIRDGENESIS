@@ -46,20 +46,9 @@ void WorldClock_Reset(void)
     clock->frames = 0;
 }
 
-// Called once per frame while the play time counter is running.
-void WorldClock_Tick(void)
+static void WorldClock_AdvanceMinute(void)
 {
     struct WorldClock *clock = &gSaveBlock2Ptr->worldClock;
-
-    if (!WorldClock_IsValid(clock))
-        WorldClock_Reset();
-
-    if (WorldClock_IsPaused())
-        return;
-
-    if (++clock->frames < WORLD_CLOCK_FRAMES_PER_MINUTE)
-        return;
-    clock->frames = 0;
 
     if (++clock->minute < WORLD_CLOCK_MINUTES_PER_HOUR)
         return;
@@ -83,6 +72,31 @@ void WorldClock_Tick(void)
 
     if (clock->year < 0xFFFF)
         clock->year++;
+}
+
+// Called once per frame while the play time counter is running.
+void WorldClock_Tick(void)
+{
+    struct WorldClock *clock = &gSaveBlock2Ptr->worldClock;
+
+    if (!WorldClock_IsValid(clock))
+        WorldClock_Reset();
+
+    if (WorldClock_IsPaused())
+        return;
+
+    if (++clock->frames < WORLD_CLOCK_FRAMES_PER_MINUTE)
+        return;
+    clock->frames = 0;
+
+    WorldClock_AdvanceMinute();
+}
+
+// Debug helper: skips forward in time, rolling over hours, days and months.
+void WorldClock_DebugAdvanceMinutes(u16 minutes)
+{
+    while (minutes-- != 0)
+        WorldClock_AdvanceMinute();
 }
 
 // Time stands still while the player is in the start menu (a moment of peace).

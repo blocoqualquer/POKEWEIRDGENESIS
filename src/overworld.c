@@ -43,6 +43,7 @@
 #include "script.h"
 #include "script_pokemon_util.h"
 #include "start_menu.h"
+#include "time_of_day_tint.h"
 #include "tileset_anims.h"
 #include "trainer_pokemon_sprites.h"
 #include "vs_seeker.h"
@@ -1756,7 +1757,7 @@ static void VBlankCB_Field(void)
     ProcessSpriteCopyRequests();
     ScanlineEffect_InitHBlankDmaTransfer();
     FieldUpdateBgTilemapScroll();
-    TransferPlttBuffer();
+    TimeOfDayTint_TransferPlttBuffer();
     TransferTilesetAnimsBuffer();
 }
 
