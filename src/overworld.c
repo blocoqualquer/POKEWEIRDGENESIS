@@ -43,6 +43,7 @@
 #include "script.h"
 #include "script_pokemon_util.h"
 #include "start_menu.h"
+#include "time_of_day_tint.h"
 #include "tileset_anims.h"
 #include "trainer_pokemon_sprites.h"
 #include "vs_seeker.h"
@@ -1487,6 +1488,13 @@ static void CB2_Overworld(void)
         SetFieldVBlankCallback();
 }
 
+// TRUE while the player is in the free overworld (as opposed to a full-screen
+// menu, a battle or a map loading screen).
+bool8 Overworld_IsFieldCallbackRunning(void)
+{
+    return gMain.callback2 == CB2_Overworld || gMain.callback2 == CB2_OverworldBasic;
+}
+
 void SetMainCallback1(MainCallback cb)
 {
     gMain.callback1 = cb;
@@ -1749,7 +1757,7 @@ static void VBlankCB_Field(void)
     ProcessSpriteCopyRequests();
     ScanlineEffect_InitHBlankDmaTransfer();
     FieldUpdateBgTilemapScroll();
-    TransferPlttBuffer();
+    TimeOfDayTint_TransferPlttBuffer();
     TransferTilesetAnimsBuffer();
 }
 

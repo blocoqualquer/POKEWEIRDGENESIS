@@ -1,104 +1,112 @@
 name: CI
 
+# POKEWEIRDGENESIS is a hack, so the output never matches the original ROM.
+# The workflow builds two ROMs on the runner:
+#   1. the pristine pret/pokefirered base commit (must match the original FireRed SHA1)
+#   2. this hack
+# and publishes ONLY the binary diff between them (an xdelta patch).
+# No ROM is ever uploaded: players apply the patch to their own FireRed ROM.
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Commit "Import pret/pokefirered base": the untouched upstream decomp.
+  BASE_COMMIT: 28a4adf2981abe171da7c11a216f7f2ad53a80f8
+  GAME_VERSION: FIRERED
+  GAME_LANGUAGE: ENGLISH
+  GAME_REVISION: 0
+  MODERN: 0
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      GAME_VERSION: FIRERED
-      GAME_LANGUAGE: ENGLISH
-      GAME_REVISION: 0
-      MODERN: 0
-      COMPARE: 1
     steps:
-      - name: Checkout
-        uses: actions/checkout@master
+      - name: Checkout hack
+        uses: actions/checkout@v4
+
+      - name: Checkout pristine base
+        uses: actions/checkout@v4
+        with:
+          path: base
+          ref: ${{ env.BASE_COMMIT }}
 
       - name: Checkout agbcc
-        uses: actions/checkout@master
+        uses: actions/checkout@v4
         with:
-          path: 'agbcc'
-          repository: 'pret/agbcc'
+          path: agbcc
+          repository: pret/agbcc
 
-      - name: Checkout symbols
-        if: ${{ github.event_name == 'push' }}
-        uses: actions/checkout@master
-        with:
-          path: 'symbols'
-          ref: 'symbols'
-
-      - name: Install binutils
+      - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev
-        # build-essential and git are already installed
-        # gcc-arm-none-eabi is only needed for the modern build
-        # as an alternative to dkP
+          sudo apt install -y gcc-arm-none-eabi binutils-arm-none-eabi libpng-dev xdelta3
 
-      - name: Install agbcc
+      - name: Test world generator (PC build of the same src/worldgen.c)
+        run: |
+          gcc -O2 -Wall -Wextra -std=gnu99 -iquote include -o worldgen_tool devtools/worldgen/worldgen_tool.c src/worldgen.c
+          ./worldgen_tool test 20000
+
+      - name: Build and install agbcc
+        working-directory: ./agbcc
         run: |
           ./build.sh
           ./install.sh ../
-        working-directory: ./agbcc
+          ./install.sh ../base
 
-      - name: Compare FireRed
-        run: |
-          make -j${nproc} all syms
-
-      - name: Compare FireRed rev1
+      - name: Build pristine base (must match the original ROM)
+        working-directory: ./base
         env:
-          GAME_REVISION: 1
-        run: |
-          make -j${nproc} all syms
+          COMPARE: 1
+        run: make -j$(nproc) all
 
-      - name: Compare FireRed rev10
+      - name: Build hack
         env:
-          GAME_REVISION: 10
-        run: |
-          make -j${nproc} all syms
-
-      - name: Compare LeafGreen
-        env:
-          GAME_VERSION: LEAFGREEN
-        run: |
-          make -j${nproc} all syms
-
-      - name: Compare LeafGreen rev1
-        env:
-          GAME_VERSION: LEAFGREEN
-          GAME_REVISION: 1
-        run: |
-          make -j${nproc} all syms
-
-      - name: Compare LeafGreen rev10
-        env:
-          GAME_VERSION: LEAFGREEN
-          GAME_REVISION: 10
-        run: |
-          make -j${nproc} all syms
-
-      - name: Build Modern
-        env:
-          MODERN: 1
           COMPARE: 0
-        run: |
-          make -j${nproc} all
+        run: make -j$(nproc) all
 
-      - name: Move symfiles
-        if: ${{ github.event_name == 'push' }}
+      - name: Create patch
         run: |
-          cp *.sym symbols/
-          echo "SYMBOLS_COMMIT_MSG=$( git log --format=%s ${GITHUB_SHA} )" >> $GITHUB_ENV
+          xdelta3 -e -9 -f -s base/pokefirered.gba pokefirered.gba POKEWEIRDGENESIS.xdelta
+          # sanity check: applying the patch to the base must give back the hack ROM
+          xdelta3 -d -f -s base/pokefirered.gba POKEWEIRDGENESIS.xdelta check.gba
+          cmp check.gba pokefirered.gba
+          rm check.gba
+          ls -l POKEWEIRDGENESIS.xdelta
 
-      - name: Update symfiles
-        if: ${{ github.event_name == 'push' }}
-        uses: EndBug/add-and-commit@v7
+      - name: Upload patch (pull requests / manual runs)
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/upload-artifact@v4
         with:
-          branch: symbols
-          cwd: "./symbols"
-          add: "*.sym"
-          message: ${{ env.SYMBOLS_COMMIT_MSG }}
+          name: POKEWEIRDGENESIS-patch
+          path: POKEWEIRDGENESIS.xdelta
+
+      - name: Publish release (main)
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          BASE_SHA1=$(cut -d' ' -f1 base/firered.sha1)
+          cat > notes.md <<NOTES
+          Build automática do commit \`$SHORT\`.
+
+          **Como jogar (no celular):**
+          1. Tenha a sua ROM original de Pokémon FireRed (EUA, versão 1.0), SHA1 \`$BASE_SHA1\`.
+          2. Baixe \`POKEWEIRDGENESIS.xdelta\` abaixo.
+          3. Aplique o patch na sua ROM com um aplicativo de patch (por exemplo UniPatcher no Android, ou o Rom Patcher JS no navegador).
+          4. Abra a ROM resultante no emulador.
+
+          Este arquivo é só um patch: não contém o jogo original.
+          NOTES
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest POKEWEIRDGENESIS.xdelta \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Build mais recente ($SHORT)" \
+            --notes-file notes.md

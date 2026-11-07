@@ -67,6 +67,7 @@ static EWRAM_DATA u8 sNumStartMenuItems = 0;
 static EWRAM_DATA u8 sStartMenuOrder[MAX_STARTMENU_ITEMS] = {};
 static EWRAM_DATA s8 sDrawStartMenuState[2] = {};
 static EWRAM_DATA u8 sSafariZoneStatsWindowId = 0;
+static EWRAM_DATA bool8 sClockPausedByMenu = FALSE;
 static ALIGNED(4) EWRAM_DATA u8 sSaveStatsWindowId = 0;
 
 static u8 (*sSaveDialogCB)(void);
@@ -278,6 +279,21 @@ static void DestroySafariZoneStatsWindow(void)
     }
 }
 
+// The world clock stands still while the start menu, or any screen opened from
+// it, is up. There is no single "menu closed" event to hook: leaving through a
+// sub-screen's field effect (using Repel from the Bag, Fly or Cut from the party,
+// ...) never goes through CloseStartMenu. So the pause releases itself once the
+// player is back in the free overworld with no start menu and no save dialog.
+bool8 StartMenu_IsClockPaused(void)
+{
+    if (sClockPausedByMenu
+     && Overworld_IsFieldCallbackRunning()
+     && GetStartMenuWindowId() == 0xFF
+     && !FuncIsActiveTask(task50_save_game))
+        sClockPausedByMenu = FALSE;
+    return sClockPausedByMenu;
+}
+
 static s8 PrintStartMenuItems(s8 *cursor_p, u8 nitems)
 {
     s16 i = *cursor_p;
@@ -317,6 +333,7 @@ static s8 DoDrawStartMenu(void)
     case 2:
         LoadStdWindowFrameGfx();
         DrawStdWindowFrame(CreateStartMenuWindow(sNumStartMenuItems), FALSE);
+        sClockPausedByMenu = TRUE; // also re-armed when returning from Bag, party, etc.
         sDrawStartMenuState[0]++;
         break;
     case 3:

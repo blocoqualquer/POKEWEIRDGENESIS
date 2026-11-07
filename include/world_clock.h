@@ -2,6 +2,7 @@
 #define GUARD_WORLD_CLOCK_H
 
 #include "global.h"
+#include "constants/world_clock.h"
 
 // ---------------------------------------------------------------------------
 // POKEWEIRDGENESIS world clock
@@ -13,6 +14,11 @@
 // whole number of weeks, day 1 of every month is always a Sunday.
 // The game always starts on Sunday, January 1st, 06:00 (year 1).
 // ---------------------------------------------------------------------------
+
+// While TRUE, L and R in the start menu skip time forward (L = +1 hour,
+// R = +15 minutes) so day/night can be tested without waiting. Set to FALSE
+// before a real release.
+#define WORLD_CLOCK_DEBUG_KEYS           TRUE
 
 #define WORLD_CLOCK_FRAMES_PER_MINUTE   60
 #define WORLD_CLOCK_MINUTES_PER_HOUR    60
@@ -67,6 +73,8 @@ enum WorldClockSeason
 
 void WorldClock_Reset(void);
 void WorldClock_Tick(void);
+bool8 WorldClock_IsPaused(void);
+void WorldClock_DebugAdvanceMinutes(u16 minutes);
 
 u16 WorldClock_GetYear(void);
 u8 WorldClock_GetMonth(void);
@@ -75,6 +83,8 @@ u8 WorldClock_GetHour(void);
 u8 WorldClock_GetMinute(void);
 u8 WorldClock_GetWeekday(void);
 u8 WorldClock_GetSeason(void);
+u8 WorldClock_GetPhase(void);   // WORLD_CLOCK_PHASE_*
 bool8 WorldClock_IsNight(void);
+u16 GetWorldClockPhase(void); // script special, returns WORLD_CLOCK_PHASE_*
 
 #endif // GUARD_WORLD_CLOCK_H

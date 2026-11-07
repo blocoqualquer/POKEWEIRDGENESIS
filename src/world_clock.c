@@ -1,5 +1,6 @@
 #include "global.h"
 #include "world_clock.h"
+#include "start_menu.h"
 
 // Month -> season. Edit this table to change the calendar's seasons.
 // Default: northern-style (January is deep winter).
@@ -18,9 +19,6 @@ static const u8 sSeasonByMonth[WORLD_CLOCK_MONTHS_PER_YEAR] =
     [MONTH_NOVEMBER]  = SEASON_AUTUMN,
     [MONTH_DECEMBER]  = SEASON_WINTER,
 };
-
-#define NIGHT_START_HOUR 20  // 20:00
-#define NIGHT_END_HOUR    6  // 06:00
 
 // Brand new games and saves made before the clock existed (zeroed memory)
 // both end up at the starting date.
@@ -48,17 +46,9 @@ void WorldClock_Reset(void)
     clock->frames = 0;
 }
 
-// Called once per frame while the play time counter is running.
-void WorldClock_Tick(void)
+static void WorldClock_AdvanceMinute(void)
 {
     struct WorldClock *clock = &gSaveBlock2Ptr->worldClock;
-
-    if (!WorldClock_IsValid(clock))
-        WorldClock_Reset();
-
-    if (++clock->frames < WORLD_CLOCK_FRAMES_PER_MINUTE)
-        return;
-    clock->frames = 0;
 
     if (++clock->minute < WORLD_CLOCK_MINUTES_PER_HOUR)
         return;
@@ -84,6 +74,38 @@ void WorldClock_Tick(void)
         clock->year++;
 }
 
+// Called once per frame while the play time counter is running.
+void WorldClock_Tick(void)
+{
+    struct WorldClock *clock = &gSaveBlock2Ptr->worldClock;
+
+    if (!WorldClock_IsValid(clock))
+        WorldClock_Reset();
+
+    if (WorldClock_IsPaused())
+        return;
+
+    if (++clock->frames < WORLD_CLOCK_FRAMES_PER_MINUTE)
+        return;
+    clock->frames = 0;
+
+    WorldClock_AdvanceMinute();
+}
+
+// Debug helper: skips forward in time, rolling over hours, days and months.
+void WorldClock_DebugAdvanceMinutes(u16 minutes)
+{
+    while (minutes-- != 0)
+        WorldClock_AdvanceMinute();
+}
+
+// Time stands still while the player is in the start menu (a moment of peace).
+// Anything else that must stop with the clock (hunger, ...) should check this too.
+bool8 WorldClock_IsPaused(void)
+{
+    return StartMenu_IsClockPaused();
+}
+
 u16 WorldClock_GetYear(void)    { return gSaveBlock2Ptr->worldClock.year; }
 u8 WorldClock_GetMonth(void)    { return gSaveBlock2Ptr->worldClock.month; }
 u8 WorldClock_GetDay(void)      { return gSaveBlock2Ptr->worldClock.day; }
@@ -96,9 +118,26 @@ u8 WorldClock_GetSeason(void)
     return sSeasonByMonth[gSaveBlock2Ptr->worldClock.month % WORLD_CLOCK_MONTHS_PER_YEAR];
 }
 
-bool8 WorldClock_IsNight(void)
+u8 WorldClock_GetPhase(void)
 {
     u8 hour = gSaveBlock2Ptr->worldClock.hour;
 
-    return hour >= NIGHT_START_HOUR || hour < NIGHT_END_HOUR;
+    // Night wraps around midnight, so it is the fallthrough case.
+    if (hour >= WORLD_CLOCK_MORNING_START_HOUR && hour < WORLD_CLOCK_DAY_START_HOUR)
+        return WORLD_CLOCK_PHASE_MORNING;
+    if (hour >= WORLD_CLOCK_DAY_START_HOUR && hour < WORLD_CLOCK_AFTERNOON_START_HOUR)
+        return WORLD_CLOCK_PHASE_DAY;
+    if (hour >= WORLD_CLOCK_AFTERNOON_START_HOUR && hour < WORLD_CLOCK_NIGHT_START_HOUR)
+        return WORLD_CLOCK_PHASE_AFTERNOON;
+    return WORLD_CLOCK_PHASE_NIGHT;
+}
+
+bool8 WorldClock_IsNight(void)
+{
+    return WorldClock_GetPhase() == WORLD_CLOCK_PHASE_NIGHT;
+}
+
+u16 GetWorldClockPhase(void)
+{
+    return WorldClock_GetPhase();
 }
