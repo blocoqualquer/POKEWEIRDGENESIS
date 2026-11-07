@@ -56,7 +56,7 @@ struct TypeInfo
 static const struct TypeInfo sTypeInfo[ZONE_TYPE_COUNT] =
 {
     [ZONE_NONE]     = {  0,  0,  0,  0,  0, 0 },
-    [ZONE_VILLAGE]  = { 10, 18, 26, 18, 26, 0 },
+    [ZONE_VILLAGE]  = { 10, 22, 28, 22, 28, 0 },
     [ZONE_CASTLE]   = {  8, 32, 44, 32, 44, 0 },
     [ZONE_FOREST]   = { 26, 30, 58, 24, 58, 1 },
     [ZONE_PLAINS]   = { 18, 32, 58, 28, 58, 1 },
@@ -69,7 +69,7 @@ static const struct TypeInfo sTypeInfo[ZONE_TYPE_COUNT] =
 #define EMPTY_SLOT_PERCENT 24
 #define SPAN_PERCENT       30
 #define STRIP_MIN_LEN      90
-#define STRIP_MIN_THICK    14
+#define STRIP_MIN_THICK    16
 #define STRIP_MAX_THICK    30
 
 static u8 PickType(void)
@@ -201,7 +201,7 @@ static void PlaceZones(struct WorldLayout *l)
             continue;
         slotUsed[slot] = 1;
         if (RandPercent(EMPTY_SLOT_PERCENT))
-            continue; // empty slot: an open lane for roads
+            continue; // empty slot: an open lane for routes
         type = PickType();
         PlaceZone(l, slotUsed, slot % WORLDGEN_GRID, slot / WORLDGEN_GRID, type);
     }
@@ -296,9 +296,9 @@ static u8 BuildEdges(const struct WorldLayout *l, struct Edge *edges)
         }
     }
 
-    // Extra links: each zone may get one more road to its nearest unlinked
+    // Extra links: each zone may get one more route to its nearest unlinked
     // neighbour, as long as that neighbour is reasonably close.
-    for (i = 0; i < n && numEdges < WORLDGEN_MAX_ROADS; i++)
+    for (i = 0; i < n && numEdges < WORLDGEN_MAX_ROUTES; i++)
     {
         nearest = 0x7FFF;
         nearestZone = 0xFF;
@@ -327,9 +327,9 @@ static u8 BuildEdges(const struct WorldLayout *l, struct Edge *edges)
 }
 
 // ---------------------------------------------------------------------------
-// Road routing. Each road leaves a zone from the side facing the other one and
+// Route routing. Each route leaves a zone from the side facing the other one and
 // runs as a straight line or a Z shape. Candidates that cut through a village,
-// castle or lake are penalised, so roads detour along the free lanes between
+// castle or lake are penalised, so routes detour along the free lanes between
 // slots whenever possible.
 // ---------------------------------------------------------------------------
 struct Rect
@@ -364,33 +364,69 @@ static u8 IsBlocker(u8 type)
     return type == ZONE_VILLAGE || type == ZONE_CASTLE || type == ZONE_LAKE;
 }
 
-// Does the axis-aligned segment (thickened by one tile each side) hit a blocking zone?
-static u8 SegmentBlocked(const struct WorldLayout *l, u8 swap, u8 skipA, u8 skipB,
-                         s32 x0, s32 y0, s32 x1, s32 y1)
+#define ROUTE_ATTEMPTS    4
+#define MAX_LANES         5
+#define BLOCKED_COST      1000 // cutting through a village, castle or lake
+#define WILD_OVERLAP_COST 60   // cutting through a forest, desert, ...
+
+// Cost of a corridor segment (axis-aligned, `halfWidth` tiles to each side of
+// its centre line) for the zones it would overlap, other than the two it joins.
+// ext0/ext1: the (x0,y0) / (x1,y1) end is an inner corner, so the corridor
+// extends halfWidth further to cover it. Ends at a zone border do not extend.
+static s32 SegmentCost(const struct WorldLayout *l, u8 swap, u8 skipA, u8 skipB, s32 halfWidth,
+                       s32 x0, s32 y0, s32 x1, s32 y1, u8 ext0, u8 ext1)
 {
-    s32 minX = Min(x0, x1) - 1;
-    s32 maxX = Max(x0, x1) + 1;
-    s32 minY = Min(y0, y1) - 1;
-    s32 maxY = Max(y0, y1) + 1;
+    s32 minX;
+    s32 maxX;
+    s32 minY;
+    s32 maxY;
+    s32 cost = 0;
     struct Rect r;
     u8 i;
 
+    if (y0 == y1) // horizontal
+    {
+        minY = y0 - halfWidth;
+        maxY = y0 + halfWidth;
+        if (x0 <= x1)
+        {
+            minX = x0 - (ext0 ? halfWidth : 0);
+            maxX = x1 + (ext1 ? halfWidth : 0);
+        }
+        else
+        {
+            minX = x1 - (ext1 ? halfWidth : 0);
+            maxX = x0 + (ext0 ? halfWidth : 0);
+        }
+    }
+    else // vertical
+    {
+        minX = x0 - halfWidth;
+        maxX = x0 + halfWidth;
+        if (y0 <= y1)
+        {
+            minY = y0 - (ext0 ? halfWidth : 0);
+            maxY = y1 + (ext1 ? halfWidth : 0);
+        }
+        else
+        {
+            minY = y1 - (ext1 ? halfWidth : 0);
+            maxY = y0 + (ext0 ? halfWidth : 0);
+        }
+    }
+
     for (i = 0; i < l->numZones; i++)
     {
-        if (i == skipA || i == skipB || !IsBlocker(l->zones[i].type))
+        if (i == skipA || i == skipB)
             continue;
         ZoneRect(&l->zones[i], swap, &r);
         if (r.x0 <= maxX && r.x1 > minX && r.y0 <= maxY && r.y1 > minY)
-            return 1;
+            cost += IsBlocker(l->zones[i].type) ? BLOCKED_COST : WILD_OVERLAP_COST;
     }
-    return 0;
+    return cost;
 }
 
-#define ROUTE_ATTEMPTS 4
-#define MAX_LANES      5
-#define BLOCKED_COST   1000
-
-static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
+static void BuildRoute(struct WorldLayout *l, u8 a, u8 b, struct WorldRoute *route)
 {
     const struct WorldZone *za = &l->zones[a];
     const struct WorldZone *zb = &l->zones[b];
@@ -405,6 +441,9 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
     s32 aX;
     s32 bX;
     s32 loA, hiA, loB, hiB, loC, hiC;
+    s32 halfWidth;
+    s32 laneLo;
+    s32 laneHi;
     s32 bestScore = 0x7FFFFFFF;
     s32 best[4][2];
     s32 bestPoints = 2;
@@ -417,7 +456,9 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
     s32 k;
     s32 score;
     s32 len;
-    s32 blocked;
+    s32 cost;
+
+    halfWidth = RandRange(WORLDGEN_ROUTE_MIN_HALF_WIDTH, WORLDGEN_ROUTE_MAX_HALF_WIDTH);
 
     gapX = Max(zb->x - (za->x + za->w), za->x - (zb->x + zb->w));
     gapY = Max(zb->y - (za->y + za->h), za->y - (zb->y + zb->h));
@@ -437,16 +478,27 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
     if (bX < aX)
         bX = aX;
 
-    loA = ra.y0 + 2;
-    hiA = ra.y1 - 3;
-    loB = rb.y0 + 2;
-    hiB = rb.y1 - 3;
+    // The corridor must fit entirely inside the side of the zone it leaves from.
+    loA = ra.y0 + halfWidth;
+    hiA = ra.y1 - 1 - halfWidth;
+    if (hiA < loA)
+        loA = hiA = (ra.y0 + ra.y1) / 2;
+    loB = rb.y0 + halfWidth;
+    hiB = rb.y1 - 1 - halfWidth;
+    if (hiB < loB)
+        loB = hiB = (rb.y0 + rb.y1) / 2;
     loC = Max(loA, loB);
     hiC = Min(hiA, hiB);
 
+    // The sideways jog must fit between the two zones too.
+    laneLo = aX + halfWidth;
+    laneHi = bX - halfWidth;
+    if (laneLo > laneHi)
+        laneLo = laneHi = (aX + bX) / 2;
+
     for (attempt = 0; attempt < ROUTE_ATTEMPTS; attempt++)
     {
-        // The first attempts try a perfectly straight road when the zones overlap in y.
+        // The first attempts try a perfectly straight route when the zones overlap in y.
         if (loC <= hiC && attempt < 2)
         {
             ay = RandRange(loC, hiC);
@@ -461,14 +513,15 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
         numLanes = 0;
         if (ay == by)
         {
-            lanes[numLanes++] = aX; // unused for straight roads
+            lanes[numLanes++] = aX; // unused for straight routes
         }
         else
         {
-            lanes[numLanes++] = (aX + bX) / 2;
-            for (lane = ((aX / WORLDGEN_CELL) + 1) * WORLDGEN_CELL; lane < bX && numLanes < MAX_LANES - 1; lane += WORLDGEN_CELL)
+            lanes[numLanes++] = (laneLo + laneHi) / 2;
+            // the free lanes between slots, where no zone ever stands
+            for (lane = ((laneLo + WORLDGEN_CELL - 1) / WORLDGEN_CELL) * WORLDGEN_CELL; lane <= laneHi && numLanes < MAX_LANES - 1; lane += WORLDGEN_CELL)
                 lanes[numLanes++] = lane;
-            lanes[numLanes++] = RandRange(aX, bX);
+            lanes[numLanes++] = RandRange(laneLo, laneHi);
         }
 
         for (k = 0; k < numLanes; k++)
@@ -476,17 +529,17 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
             lane = lanes[k];
             if (ay == by)
             {
-                blocked = SegmentBlocked(l, swap, skipA, skipB, aX, ay, bX, by);
+                cost = SegmentCost(l, swap, skipA, skipB, halfWidth, aX, ay, bX, by, 0, 0);
                 len = bX - aX;
             }
             else
             {
-                blocked = SegmentBlocked(l, swap, skipA, skipB, aX, ay, lane, ay)
-                        + SegmentBlocked(l, swap, skipA, skipB, lane, ay, lane, by)
-                        + SegmentBlocked(l, swap, skipA, skipB, lane, by, bX, by);
+                cost = SegmentCost(l, swap, skipA, skipB, halfWidth, aX, ay, lane, ay, 0, 1)
+                     + SegmentCost(l, swap, skipA, skipB, halfWidth, lane, ay, lane, by, 1, 1)
+                     + SegmentCost(l, swap, skipA, skipB, halfWidth, lane, by, bX, by, 1, 0);
                 len = Abs(lane - aX) + Abs(ay - by) + Abs(bX - lane);
             }
-            score = len + blocked * BLOCKED_COST;
+            score = len + cost;
             if (score < bestScore)
             {
                 bestScore = score;
@@ -508,21 +561,21 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
         }
     }
 
-    road->from = a;
-    road->to = b;
-    road->numPoints = bestPoints;
-    road->pad = 0;
+    route->from = a;
+    route->to = b;
+    route->numPoints = bestPoints;
+    route->halfWidth = halfWidth;
     for (k = 0; k < 4; k++)
     {
         if (k < bestPoints)
         {
-            road->x[k] = swap ? best[k][1] : best[k][0];
-            road->y[k] = swap ? best[k][0] : best[k][1];
+            route->x[k] = swap ? best[k][1] : best[k][0];
+            route->y[k] = swap ? best[k][0] : best[k][1];
         }
         else
         {
-            road->x[k] = 0;
-            road->y[k] = 0;
+            route->x[k] = 0;
+            route->y[k] = 0;
         }
     }
 }
@@ -530,7 +583,7 @@ static void RouteRoad(struct WorldLayout *l, u8 a, u8 b, struct WorldRoad *road)
 // ---------------------------------------------------------------------------
 void WorldGen_Generate(struct WorldLayout *l, u32 seed)
 {
-    struct Edge edges[WORLDGEN_MAX_ROADS];
+    struct Edge edges[WORLDGEN_MAX_ROUTES];
     u8 numEdges;
     u8 i;
 
@@ -542,12 +595,12 @@ void WorldGen_Generate(struct WorldLayout *l, u32 seed)
 
     l->seed = seed;
     l->numZones = 0;
-    l->numRoads = 0;
+    l->numRoutes = 0;
     l->startZone = 0;
     l->pad = 0;
 
     PlaceZones(l);
     numEdges = BuildEdges(l, edges);
     for (i = 0; i < numEdges; i++)
-        RouteRoad(l, edges[i].a, edges[i].b, &l->roads[l->numRoads++]);
+        BuildRoute(l, edges[i].a, edges[i].b, &l->routes[l->numRoutes++]);
 }
