@@ -13,5 +13,5 @@ gcc -O2 -Wall -Wextra -std=gnu99 -iquote include -o worldgen_tool \
 
 O CI roda o `test` a cada push. As regras verificadas: número de zonas entre 12 e
 36, zonas dentro do mapa e sem sobreposição, aldeia inicial na zona 0, ao menos
-2 castelos, todas as zonas ligadas por rota, rotas só com segmentos retos,
-as rotas nunca atravessam as zonas que ligam, e a mesma seed sempre gera o mesmo mundo.
+2 castelos, todas as zonas ligadas por rota, zonas de rota só com segmentos retos,
+as zonas de rota nunca atravessam as zonas que ligam, e a mesma seed sempre gera o mesmo mundo.
